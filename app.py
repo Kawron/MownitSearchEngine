@@ -1,34 +1,28 @@
-from flask import Flask, render_template
-from flask import request, jsonify
-import zad as back
+from flask import Flask, render_template, request, jsonify
+import searchEngine as backend
 
 
-app = Flask(__name__, static_folder="frontend/build/static", template_folder="frontend/build")
-# search_engine = SearchEngine("150k", 150000)
-# search_engine_svd = SearchEngine("5k", 5000, low_rank_approx=True, k=500)
+app = Flask(__name__, static_folder="my-app/build/static", template_folder="my-app/build")
 
 
-@app.route("/")
-def render():
+@app.route('/')
+def index():
     return render_template('index.html')
 
 
-@app.route("/search_query", methods=['POST'])
-def search_query():
-    if "search_query" not in request.json or "low_rank_approx" not in request.json:
-        return "Wrong request", 400
-
+@app.route("/search", methods=['POST'])
+def search():
     print(request.json)
+    if "query" not in request.json:
+        return "Bad request", 400
 
-    ## to zaraz
-    if request.json["low_rank_approx"]:
-        result = back.main(request.json["search_query"])
+    if "svd_k" in request.json:
+        res = backend.searchQuery(request.json["query"], request.json["svd_k"])
     else:
-        result = back.main(request.json["search_query"])
+        res = backend.searchQuery(request.json["query"], False)
 
-    print(result)
 
-    return jsonify({"result": result}), 200, {'ContentType': 'application/json'}
+    return jsonify({"result": res}), 200, {'ContentType': 'application/json'}
 
 
 if __name__ == '__main__':

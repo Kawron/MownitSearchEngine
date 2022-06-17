@@ -14,9 +14,6 @@ import time
 stopWords = copy.deepcopy(nltk.corpus.stopwords.words('english'))
 stemmer = nltk.stem.PorterStemmer()
 path = './cache'
-# terms = defaultdict(lambda: 0)
-
-# byc moze bedzie trzeba dodac stuczny dict!!!!!!
 
 def saveDocuments(documents):
     filePath = path + '/documents.json'
@@ -200,37 +197,45 @@ def search(documents, terms, query, tfIdf):
         cos[0,j] = prob(q, tfIdf, j, n)[0, 0]
     resArr = [(cos[0,j], j) for j in range(m)]
     resArr = sorted(resArr, key=lambda tup: tup[0], reverse=True)
-    print(resArr)
+    # print(resArr)
+    # res = []
+    # for i in range(10):
+    #     article = documents[str(resArr[i][1])]
+    #     res.append(f"Title: {article['name']}, URL: {article['url']}")
+    # for art in res:
+    #     print(art)
     res = []
     for i in range(10):
         article = documents[str(resArr[i][1])]
-        res.append(f"Title: {article['name']}, URL: {article['url']}")
-    for art in res:
-        print(art)
+        website = {}
+        website['title'] = article["name"]
+        website['url'] = article['url']
+        res.append(website)
+        # res.append(f"Title: {article['name']}, URL: {article['url']}")
+    return res
 
+def doIndexing(svd_k):
+    timeStart = time.time()
 
+    documents = getContent()
+    terms = parseContent(documents)
+    tfIdf = createTfIdf(documents, terms)
+    saveTfIdf(tfIdf)
+    if svd_k > 0:
+        tfIdf = calcSVD(tfIdf, svd_k)
+        saveSVD(tfIdf)
+    saveDocuments(documents)
+    saveTerms(terms)
 
-def main(type, query, svd_k):
-    if type == 'save':
-        timeStart = time.time()
+    timeEnd = time.time()
+    print(f"Saving took: {timeEnd-timeStart}s")
 
-        documents = getContent()
-        terms = parseContent(documents)
-        tfIdf = createTfIdf(documents, terms)
-        saveTfIdf(tfIdf)
-        if svd_k > 0:
-            tfIdf = calcSVD(tfIdf, svd_k)
-            saveSVD(tfIdf)
-        saveDocuments(documents)
-        saveTerms(terms)
-
-        timeEnd = time.time()
-        print(f"Saving took: {timeEnd-timeStart}s")
-
-    if type == 'query':
-        terms = loadTerms()
-        tfIdf = loadTfIdf()
-        if svd_k > 0:
-            tfIdf = loadSVD()
-        documents = loadDocuments()
-        search(documents, terms, query, tfIdf)
+def searchQuery(query, svd_k):
+    svd_k = int(svd_k)
+    terms = loadTerms()
+    tfIdf = loadTfIdf()
+    if svd_k > 0:
+        tfIdf = loadSVD()
+    documents = loadDocuments()
+    res = search(documents, terms, query, tfIdf)
+    return res
