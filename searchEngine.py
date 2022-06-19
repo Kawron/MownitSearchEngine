@@ -52,23 +52,23 @@ def loadTfIdf():
     return scipy.sparse.load_npz(filePath)
 
 def saveSVD(SVD):
-    filePath = path + '/SVD.npy'
-    f = open(filePath, mode='wb')
-    np.save(f, SVD)
-    f.close()
+    filePath = path + '/SVD.npz'
+    scipy.sparse.save_npz(filePath, SVD)
+    # f = open(filePath, mode='wb')
+    # np.save(f, SVD)
+    # f.close()
 
 def loadSVD():
-    filePath = path + '/SVD.npy'
-    f = open(filePath, mode='rb')
-    SVD = np.load(f)
-    f.close()
-    return SVD
+    filePath = path + '/SVD.npz'
+    return scipy.sparse.load_npz(filePath)
+    # f = open(filePath, mode='rb')
+    # SVD = np.load(f)
+    # f.close()
+    # return SVD
     
-    
-
 def getContent():
     documents = []
-    with open('test.txt', 'r', encoding='utf-8') as f:
+    with open('new-corpus.txt', 'r', encoding='utf-8') as f:
         corpus = f.read()
         for article in corpus.split('\n\n'):
             name, content = article.split('\n', 1)
@@ -93,7 +93,7 @@ def parseContent(documents):
         tokens = content.split()
         # for token in nltk.word_tokenize(content):
         for token in tokens:
-            if len(token) <= 2:
+            if len(token) <= 3:
                 continue
             if token in stopWords:
                 continue
@@ -110,8 +110,9 @@ def createTfIdf(documents, terms):
     tfIdf = scipy.sparse.lil_matrix((n, m))
     wordVec = defaultdict(lambda: 0)
     for i in range(n):
+        if i % 100 == 0:
+            print(f'Word i-th: {i}')
         for j in range(m):
-            print(f'i: {i} j: {j}')
             term = terms[i]
             vec = documents[j]['vec']
             if term in vec:
@@ -167,43 +168,51 @@ def get_col(A, j, n):
     return col
 
 def prob(q, tfIdf, j, n):
-    # q is res of parse content
-    Aj = get_col(tfIdf, j, n)
+    print("STARTING PROB")
+    t1 = time.time()
+    Aj = tfIdf[:, j]
+    # Aj = get_col(tfIdf, j, n)
+    t2 = time.time()
+    print(f"getting col took {t2-t1}s")
+    print("Calcing numerator")
+    t1 = time.time()
     numerator = q*Aj
+    t2 = time.time()
+    print(f"Calcing numerator took {t2-t1}s")
+    print("Calcing norms")
+    t1 = time.time()
+    # te normy na upartego da sie jeszcze skrócić, powinno pomóc o tak sekunde albo więcej
     denumerator = scipy.sparse.linalg.norm(q)
     denumerator *= scipy.sparse.linalg.norm(Aj)
+    t2 = time.time()
+    print(f"Calcing norms took {t2-t1}s")
+    print("DIVISION")
+    t1 = time.time()
     res = numerator/denumerator
+    t2 = time.time()
+    print(f"Division took {t2-t1}s")
     print(res)
     return res
 
 def calcSVD(A, k):
-    B = A.toarray()
-    SVD = np.linalg.svd(B, full_matrices=False)
-    u,s,v = SVD
-    Ar = np.zeros((len(u), len(v)))
-    for i in range(k):
-        Ar += s[i] * np.outer(u.T[i], v[i])
+    u, s, v = scipy.sparse.linalg.svds(A, k)
+    Ar = u @ np.diag(s) @ v
+    Ar = scipy.sparse.csc_matrix(Ar)
+    print(f"Ar type: {type(Ar)}")
     return Ar
 
 def search(documents, terms, query, tfIdf):
     n = len(terms.values())
     m = len(documents.values())
-    print(m)
 
     q = parseQuery(query, terms)
 
     cos = scipy.sparse.lil_matrix((1,n))
     for j in range(m):
+        print(f"calc prob for {j} document")
         cos[0,j] = prob(q, tfIdf, j, n)[0, 0]
     resArr = [(cos[0,j], j) for j in range(m)]
     resArr = sorted(resArr, key=lambda tup: tup[0], reverse=True)
-    # print(resArr)
-    # res = []
-    # for i in range(10):
-    #     article = documents[str(resArr[i][1])]
-    #     res.append(f"Title: {article['name']}, URL: {article['url']}")
-    # for art in res:
-    #     print(art)
     res = []
     for i in range(10):
         article = documents[str(resArr[i][1])]
@@ -212,6 +221,7 @@ def search(documents, terms, query, tfIdf):
         website['url'] = article['url']
         res.append(website)
         # res.append(f"Title: {article['name']}, URL: {article['url']}")
+    print(res)
     return res
 
 def doIndexing(svd_k):
@@ -220,10 +230,13 @@ def doIndexing(svd_k):
     documents = getContent()
     terms = parseContent(documents)
     tfIdf = createTfIdf(documents, terms)
+    print("Started to save files")
     saveTfIdf(tfIdf)
     if svd_k > 0:
+        print("Started to calculating SVD")
         tfIdf = calcSVD(tfIdf, svd_k)
         saveSVD(tfIdf)
+        print("Ended SVD")
     saveDocuments(documents)
     saveTerms(terms)
 
@@ -231,11 +244,23 @@ def doIndexing(svd_k):
     print(f"Saving took: {timeEnd-timeStart}s")
 
 def searchQuery(query, svd_k):
+    timeStart = time.time()
+    print(f"Starting loading matrices")
     svd_k = int(svd_k)
     terms = loadTerms()
     tfIdf = loadTfIdf()
     if svd_k > 0:
         tfIdf = loadSVD()
     documents = loadDocuments()
+    timeEnd = time.time()
+    print(f"Ending loading matrices, time: {timeEnd-timeStart} s")
+    timeStart = time.time()
+    print(f"Starting searching")
     res = search(documents, terms, query, tfIdf)
+    timeEnd = time.time()
+    print(f"Ended searching, time: {timeEnd-timeStart} s")
     return res
+
+#k = 100
+# doIndexing(100)
+searchQuery("abort", 10)
