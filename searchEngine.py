@@ -8,67 +8,17 @@ from collections import defaultdict
 import scipy
 import numpy as np
 import time
+from save_load import *
 
 #https://github.com/tomekzaw/agh_sem4_mownit2/blob/master/lab6/Laboratorium_6_Tomasz_Zawadzki.pdf
 
 stopWords = copy.deepcopy(nltk.corpus.stopwords.words('english'))
 stemmer = nltk.stem.PorterStemmer()
-path = './cache'
+corpusPath = "new-corpus.txt"
 
-def saveDocuments(documents):
-    filePath = path + '/documents.json'
-    jsonObj = json.dumps(documents, indent=4)
-    out = open(filePath, encoding='utf-8', mode='w')
-    out.write(jsonObj)
-    out.close()
-
-def saveTerms(terms):
-    filePath = path + '/terms.json'
-    jsonObj = json.dumps(terms, indent=4)
-    out = open(filePath, encoding='utf-8', mode='w')
-    out.write(jsonObj)
-    out.close()
-
-def loadDocuments():
-    filePath = path + '/documents.json'
-    f = open(filePath, encoding='utf-8', mode='r')
-    jsonObj = json.load(f)
-    f.close()
-    return jsonObj
-
-def loadTerms():
-    filePath = path + '/terms.json'
-    f = open(filePath, encoding='utf-8', mode='r')
-    jsonObj = json.load(f)
-    f.close()
-    return jsonObj
-
-def saveTfIdf(TfIdf):
-    filePath = path + '/tf-idf.npz'
-    scipy.sparse.save_npz(filePath, TfIdf)
-
-def loadTfIdf():
-    filePath = path + '/tf-idf.npz'
-    return scipy.sparse.load_npz(filePath)
-
-def saveSVD(SVD):
-    filePath = path + '/SVD.npz'
-    scipy.sparse.save_npz(filePath, SVD)
-    # f = open(filePath, mode='wb')
-    # np.save(f, SVD)
-    # f.close()
-
-def loadSVD():
-    filePath = path + '/SVD.npz'
-    return scipy.sparse.load_npz(filePath)
-    # f = open(filePath, mode='rb')
-    # SVD = np.load(f)
-    # f.close()
-    # return SVD
-    
 def getContent():
     documents = []
-    with open('new-corpus.txt', 'r', encoding='utf-8') as f:
+    with open(corpusPath, 'r', encoding='utf-8') as f:
         corpus = f.read()
         for article in corpus.split('\n\n'):
             name, content = article.split('\n', 1)
@@ -160,38 +110,38 @@ def parseQuery(query, terms):
             vec[0,i] = 0
     return vec
 
-
 def get_col(A, j, n):
     col = scipy.sparse.lil_matrix((n, 1))
     for i in range(n):
         col[i, 0] = A[i, j]
     return col
 
-def prob(q, tfIdf, j, n):
-    print("STARTING PROB")
+def prob(q, tfIdf, j, n, norms):
+    # print("STARTING PROB")
     t1 = time.time()
     Aj = tfIdf[:, j]
     # Aj = get_col(tfIdf, j, n)
     t2 = time.time()
-    print(f"getting col took {t2-t1}s")
-    print("Calcing numerator")
+    # print(f"getting col took {t2-t1}s")
+    # print("Calcing numerator")
     t1 = time.time()
     numerator = q*Aj
     t2 = time.time()
-    print(f"Calcing numerator took {t2-t1}s")
-    print("Calcing norms")
+    # print(f"Calcing numerator took {t2-t1}s")
+    # print("Calcing norms")
     t1 = time.time()
     # te normy na upartego da sie jeszcze skrócić, powinno pomóc o tak sekunde albo więcej
     denumerator = scipy.sparse.linalg.norm(q)
-    denumerator *= scipy.sparse.linalg.norm(Aj)
+    # denumerator *= scipy.sparse.linalg.norm(Aj)
+    denumerator *= norms[j]
     t2 = time.time()
-    print(f"Calcing norms took {t2-t1}s")
-    print("DIVISION")
+    # print(f"Calcing norms took {t2-t1}s")
+    # print("DIVISION")
     t1 = time.time()
     res = numerator/denumerator
     t2 = time.time()
-    print(f"Division took {t2-t1}s")
-    print(res)
+    # print(f"Division took {t2-t1}s")
+    # print(res)
     return res
 
 def calcSVD(A, k):
@@ -201,7 +151,7 @@ def calcSVD(A, k):
     print(f"Ar type: {type(Ar)}")
     return Ar
 
-def search(documents, terms, query, tfIdf):
+def search(documents, terms, query, tfIdf, norms):
     n = len(terms.values())
     m = len(documents.values())
 
@@ -209,8 +159,8 @@ def search(documents, terms, query, tfIdf):
 
     cos = scipy.sparse.lil_matrix((1,n))
     for j in range(m):
-        print(f"calc prob for {j} document")
-        cos[0,j] = prob(q, tfIdf, j, n)[0, 0]
+        # print(f"calc prob for {j} document")
+        cos[0,j] = prob(q, tfIdf, j, n, norms)[0, 0]
     resArr = [(cos[0,j], j) for j in range(m)]
     resArr = sorted(resArr, key=lambda tup: tup[0], reverse=True)
     res = []
@@ -224,17 +174,30 @@ def search(documents, terms, query, tfIdf):
     print(res)
     return res
 
+def getNorms(A):
+    norms = []
+    for i in range(A.shape[1]):
+        col = A[:, i]
+        norm = scipy.sparse.linalg.norm(col)
+        norms.append(norm)
+    norms = np.array(norms)
+    return norms 
+
 def doIndexing(svd_k):
     timeStart = time.time()
 
     documents = getContent()
     terms = parseContent(documents)
     tfIdf = createTfIdf(documents, terms)
+    tfIdfNorms = getNorms(tfIdf)
     print("Started to save files")
     saveTfIdf(tfIdf)
+    saveTfIdfNorms(tfIdfNorms)
     if svd_k > 0:
         print("Started to calculating SVD")
         tfIdf = calcSVD(tfIdf, svd_k)
+        svdNorms = getNorms(tfIdf)
+        saveSVDNorms(svdNorms)
         saveSVD(tfIdf)
         print("Ended SVD")
     saveDocuments(documents)
@@ -249,18 +212,21 @@ def searchQuery(query, svd_k):
     svd_k = int(svd_k)
     terms = loadTerms()
     tfIdf = loadTfIdf()
+    norms = loadTfIdfNorms()
     if svd_k > 0:
         tfIdf = loadSVD()
+        norms = loadSVDNorms()
     documents = loadDocuments()
     timeEnd = time.time()
     print(f"Ending loading matrices, time: {timeEnd-timeStart} s")
     timeStart = time.time()
     print(f"Starting searching")
-    res = search(documents, terms, query, tfIdf)
+    res = search(documents, terms, query, tfIdf, norms)
     timeEnd = time.time()
     print(f"Ended searching, time: {timeEnd-timeStart} s")
+    print(tfIdf[25,25])
     return res
 
-#k = 100
-# doIndexing(100)
-searchQuery("abort", 10)
+#k = 25
+# doIndexing(25)
+searchQuery("First computer", 10)
